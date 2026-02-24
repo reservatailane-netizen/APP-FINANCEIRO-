@@ -593,6 +593,10 @@ h1,h2,h3 { font-family: 'Syne', sans-serif; }
     <div class="section-title">Entradas x Saídas (6 meses)</div>
     <div class="chart-wrapper-lg chart-wrapper"><canvas id="bar-chart"></canvas></div>
   </div>
+  <div class="card">
+    <div class="section-title">Meios de Pagamento (Saídas)</div>
+    <div class="chart-wrapper"><canvas id="payment-chart"></canvas></div>
+  </div>
 </div>
 
 <div id="page-lancamentos" class="page">
@@ -620,11 +624,30 @@ h1,h2,h3 { font-family: 'Syne', sans-serif; }
     </div>
     <div class="form-group">
       <label class="form-label">Forma de Pagamento</label>
-      <select class="form-select" id="tx-payment">
+      <select class="form-select" id="tx-payment" onchange="onPaymentChange()">
         <option value="pix">💸 Pix</option>
         <option value="debito">💳 Débito</option>
         <option value="credito">💳 Crédito</option>
         <option value="dinheiro">💵 Dinheiro</option>
+      </select>
+    </div>
+    <div class="form-group" id="parcelas-group" style="display:none">
+      <label class="form-label">💳 Número de Parcelas</label>
+      <select class="form-select" id="tx-parcelas">
+        <option value="1">1x (à vista)</option>
+        <option value="2">2x</option>
+        <option value="3">3x</option>
+        <option value="4">4x</option>
+        <option value="5">5x</option>
+        <option value="6">6x</option>
+        <option value="7">7x</option>
+        <option value="8">8x</option>
+        <option value="9">9x</option>
+        <option value="10">10x</option>
+        <option value="11">11x</option>
+        <option value="12">12x</option>
+        <option value="18">18x</option>
+        <option value="24">24x</option>
       </select>
     </div>
     <div class="form-group">
@@ -648,6 +671,14 @@ h1,h2,h3 { font-family: 'Syne', sans-serif; }
     <div class="filter-chip" onclick="setFilter('type','entrada',this)">Entradas</div>
     <div class="filter-chip" onclick="setFilter('type','saida',this)">Saídas</div>
   </div>
+  <div class="filter-row" id="payment-filters">
+    <div class="filter-chip active" onclick="setFilter('payment','todos',this)">💳 Todos</div>
+    <div class="filter-chip" onclick="setFilter('payment','pix',this)">💸 Pix</div>
+    <div class="filter-chip" onclick="setFilter('payment','debito',this)">💳 Débito</div>
+    <div class="filter-chip" onclick="setFilter('payment','credito',this)">💳 Crédito</div>
+    <div class="filter-chip" onclick="setFilter('payment','dinheiro',this)">💵 Dinheiro</div>
+  </div>
+  <div class="filter-row" id="group-filters" style="display:none"></div>
   <div class="card" id="tx-list-container">
     <div id="tx-list"></div>
   </div>
@@ -748,6 +779,8 @@ let catLimits = JSON.parse(localStorage.getItem('catLimits') || '{}');
 let currentType = 'entrada';
 let filterType = 'todos';
 let filterMonth = '';
+let filterPayment = 'todos';
+let filterGroupId = null;
 let charts = {};
 
 const now = new Date();
@@ -948,6 +981,20 @@ function setType(type) {
   document.getElementById('btn-entrada').className = 'type-btn' + (type==='entrada' ? ' active-entrada' : '');
   document.getElementById('btn-saida').className = 'type-btn' + (type==='saida' ? ' active-saida' : '');
   updateCategoryOptions();
+  if(type === 'entrada') {
+    document.getElementById('parcelas-group').style.display = 'none';
+    document.getElementById('tx-payment').value = 'pix';
+  }
+}
+function onPaymentChange() {
+  const payment = document.getElementById('tx-payment').value;
+  const pg = document.getElementById('parcelas-group');
+  if(payment === 'credito' && currentType === 'saida') {
+    pg.style.display = 'block';
+  } else {
+    pg.style.display = 'none';
+    document.getElementById('tx-parcelas').value = '1';
+  }
 }
 function updateCategoryOptions() {
   const sel = document.getElementById('tx-category');
@@ -956,8 +1003,20 @@ function updateCategoryOptions() {
 function setFilter(key, val, el) {
   if(key==='type') { filterType = val; document.querySelectorAll('#type-filters .filter-chip').forEach(c => c.classList.remove('active')); }
   if(key==='month') { filterMonth = val; document.querySelectorAll('#month-filters .filter-chip').forEach(c => c.classList.remove('active')); }
+  if(key==='payment') { filterPayment = val; document.querySelectorAll('#payment-filters .filter-chip').forEach(c => c.classList.remove('active')); }
+  if(key==='group') { filterGroupId = val ? Number(val) : null; document.querySelectorAll('#group-filters .filter-chip').forEach(c => c.classList.remove('active')); }
   el.classList.add('active');
   renderTxList();
+}
+function clearGroupFilter() {
+  filterGroupId = null;
+  document.getElementById('group-filters').style.display = 'none';
+  renderTxList();
+}
+function buildGroupFilter(groupId, desc, total) {
+  const gf = document.getElementById('group-filters');
+  gf.style.display = 'flex';
+  gf.innerHTML = `<div class="filter-chip active" onclick="setFilter('group','${groupId}',this)">🔍 ${desc} (${total}x)</div><div class="filter-chip" onclick="clearGroupFilter()" style="background:var(--bg3)">✕ Limpar</div>`;
 }
 function buildMonthFilters() {
   const months = [...new Set(transactions.map(t => t.date.substring(0,7)))].sort().reverse();
@@ -977,25 +1036,64 @@ function addTransaction() {
   const payment = document.getElementById('tx-payment').value;
   const kind = document.getElementById('tx-kind').value;
   const obs = document.getElementById('tx-obs').value;
+  const parcelas = payment === 'credito' && currentType === 'saida'
+    ? parseInt(document.getElementById('tx-parcelas').value) : 1;
   if(!date || !value || value<=0) { showToast('⚠️ Preencha data e valor!', 'error'); return; }
-  const tx = { id: Date.now(), date, value, category, desc: desc||category, payment, kind, obs, type: currentType };
-  transactions.unshift(tx);
+
+  if(parcelas > 1) {
+    const valorParcela = parseFloat((value / parcelas).toFixed(2));
+    const [y, m] = date.split('-');
+    const groupId = Date.now();
+    for(let i = 0; i < parcelas; i++) {
+      const d = new Date(parseInt(y), parseInt(m)-1+i, parseInt(date.split('-')[2]));
+      const txDate = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      const tx = {
+        id: groupId + i,
+        date: txDate,
+        value: valorParcela,
+        category, payment, kind, obs,
+        desc: (desc||category) + ' (' + (i+1) + '/' + parcelas + ')',
+        type: currentType,
+        parcelado: true, parcela: i+1, totalParcelas: parcelas, groupId
+      };
+      transactions.unshift(tx);
+    }
+    showToast('✅ ' + parcelas + 'x de ' + fmt(valorParcela) + ' adicionadas!');
+  } else {
+    const tx = { id: Date.now(), date, value, category, desc: desc||category, payment, kind, obs, type: currentType };
+    transactions.unshift(tx);
+    showToast('✅ Lançamento adicionado!');
+  }
+
   save();
-  showToast('✅ Lançamento adicionado!');
   document.getElementById('tx-value').value = '';
   document.getElementById('tx-desc').value = '';
   document.getElementById('tx-obs').value = '';
+  document.getElementById('tx-parcelas').value = '1';
+  document.getElementById('parcelas-group').style.display = 'none';
+  document.getElementById('tx-payment').value = 'pix';
   buildMonthFilters();
   renderTxList();
   updateDashboard();
   checkAlerts();
 }
-function deleteTransaction(id) {
-  transactions = transactions.filter(t => t.id !== id);
+function deleteTransaction(id, groupId, totalParcelas) {
+  if(groupId && totalParcelas > 1) {
+    const choice = confirm('Esse lançamento é parcelado (' + totalParcelas + 'x).\n\nOK = apagar TODAS as parcelas\nCancelar = apagar só esta parcela');
+    if(choice) {
+      transactions = transactions.filter(t => t.groupId !== groupId);
+      showToast('🗑️ Todas as parcelas removidas', 'error');
+    } else {
+      transactions = transactions.filter(t => t.id !== id);
+      showToast('🗑️ Parcela removida', 'error');
+    }
+  } else {
+    transactions = transactions.filter(t => t.id !== id);
+    showToast('🗑️ Lançamento removido', 'error');
+  }
   save();
   renderTxList();
   updateDashboard();
-  showToast('🗑️ Lançamento removido', 'error');
 }
 function save() {
   localStorage.setItem('transactions', JSON.stringify(transactions));
@@ -1009,6 +1107,8 @@ function getFilteredTx() {
   return transactions.filter(t => {
     if(filterMonth && !t.date.startsWith(filterMonth)) return false;
     if(filterType !== 'todos' && t.type !== filterType) return false;
+    if(filterPayment !== 'todos' && t.payment !== filterPayment) return false;
+    if(filterGroupId && Number(t.groupId) !== Number(filterGroupId)) return false;
     return true;
   });
 }
@@ -1021,13 +1121,14 @@ function renderTxList() {
       <div class="tx-icon ${t.type}">${CAT_ICONS[t.category]||'💼'}</div>
       <div class="tx-info">
         <div class="tx-desc">${t.desc}</div>
-        <div class="tx-meta">${new Date(t.date+'T12:00').toLocaleDateString('pt-BR')} · ${t.category} · <span class="badge ${t.kind}">${t.kind}</span></div>
+        <div class="tx-meta">${new Date(t.date+'T12:00').toLocaleDateString('pt-BR')} · ${t.category} · <span class="badge ${t.kind}">${t.kind}</span> · <span style="font-size:11px;color:var(--text2)">${{pix:'💸 Pix',debito:'💳 Débito',credito:'💳 Crédito',dinheiro:'💵 Dinheiro'}[t.payment]||t.payment}</span></div>
+        ${t.parcelado ? `<div class="tx-meta"><span class="badge fixo" style="cursor:pointer" onclick="buildGroupFilter(${t.groupId}, '${t.desc.replace(/\s*\(\d+\/\d+\)/,'')}', ${t.totalParcelas})">💳 ver todas as ${t.totalParcelas} parcelas</span></div>` : ''}
         ${t.obs ? `<div class="tx-meta" style="color:var(--text2);font-style:italic">${t.obs}</div>` : ''}
       </div>
       <div>
         <div class="tx-amount ${t.type==='entrada'?'green':'red'}">${t.type==='entrada'?'+':'-'}${fmt(t.value)}</div>
       </div>
-      <button class="tx-delete" onclick="deleteTransaction(${t.id})">🗑️</button>
+      <button class="tx-delete" onclick="deleteTransaction(${t.id}, ${t.groupId||'null'}, ${t.totalParcelas||1})">🗑️</button>
     </div>
   `).join('');
 }
@@ -1039,13 +1140,16 @@ function updateDashboard() {
   const balance = income - expense;
   const [y, m] = currentMonth.split('-');
   const monthLabel = new Date(y,m-1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
-  document.getElementById('balance-value').textContent = fmt(balance);
+  const balanceEl = document.getElementById('balance-value');
+  balanceEl.textContent = (balance < 0 ? '-' : '') + fmt(balance);
+  balanceEl.style.color = balance < 0 ? '#ff4d6d' : '#003322';
   document.getElementById('balance-month').textContent = monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1);
   document.getElementById('total-income').textContent = fmt(income);
   document.getElementById('total-expense').textContent = fmt(expense);
   checkAlerts();
   renderPieChart(txs);
   renderBarChart();
+  renderPaymentChart(txs);
 }
 function checkAlerts() {
   const txs = getMonthTx(currentMonth);
@@ -1107,6 +1211,29 @@ function renderBarChart() {
         x: { grid:{display:false}, ticks:{color:'#888'} },
         y: { grid:{color:'rgba(255,255,255,0.05)'}, ticks:{color:'#888', callback:v=>'R$'+v} }
       }
+    }
+  });
+}
+
+function renderPaymentChart(txs) {
+  const paymentTotals = {};
+  const labels_map = {pix:'💸 Pix', debito:'💳 Débito', credito:'💳 Crédito', dinheiro:'💵 Dinheiro'};
+  txs.filter(t=>t.type==='saida').forEach(t => {
+    const label = labels_map[t.payment] || t.payment;
+    paymentTotals[label] = (paymentTotals[label]||0) + t.value;
+  });
+  const labels = Object.keys(paymentTotals);
+  const data = Object.values(paymentTotals);
+  const colors = ['#4d9fff','#ff4d6d','#a855f7','#ffd166'];
+  const ctx = document.getElementById('payment-chart').getContext('2d');
+  if(charts.payment) charts.payment.destroy();
+  if(!labels.length) { ctx.clearRect(0,0,300,200); return; }
+  charts.payment = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0, hoverOffset: 8 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '60%',
+      plugins: { legend: { position: 'bottom', labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text').trim()||'#fff', font:{size:11}, padding:10, boxWidth:10 } } }
     }
   });
 }
