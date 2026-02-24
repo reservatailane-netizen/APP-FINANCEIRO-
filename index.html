@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="pt-BR" data-theme="dark">
 <head>
+<link rel="manifest" href="/APP-FINANCEIRO-/manifest.json">
+<meta name="theme-color" content="#2E8B57">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>FinanceApp</title>
@@ -1386,6 +1388,11 @@ function init() {
   updateDashboard();
 }
 init();
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/APP-FINANCEIRO-/service-worker.js");
+}
 </script>
 </body>
 </html>
